@@ -1,15 +1,32 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
-import plotly.express as px
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
-from xgboost import XGBClassifier
-import warnings
-import os
+  import streamlit as st
+  import pandas as pd
+  import numpy as np
+  import plotly.graph_objects as go
+  import plotly.express as px
+  from sklearn.model_selection import train_test_split
+  from sklearn.metrics import accuracy_score
+  from xgboost import XGBClassifier
+  import warnings
+  import os
+  import zipfile
 
-warnings.filterwarnings('ignore')
+  warnings.filterwarnings('ignore')
+
+  # Auto-extract deliveries.csv from zip if not present
+  script_dir = os.path.dirname(os.path.abspath(__file__))
+  csv_path = os.path.join(script_dir, 'deliveries.csv')
+  if not os.path.exists(csv_path):
+      zip_path = os.path.join(script_dir, 'deliveries.zip')
+      if not os.path.exists(zip_path):
+          zip_path = os.path.join(script_dir, 'deliveries.csv.zip')
+      if os.path.exists(zip_path):
+          with zipfile.ZipFile(zip_path, 'r') as zf:
+              csv_files = [f for f in zf.namelist() if f.endswith('.csv')]
+              if csv_files:
+                  zf.extract(csv_files[0], script_dir)
+                  extracted = os.path.join(script_dir, csv_files[0])
+                  if extracted != csv_path:
+                      os.rename(extracted, csv_path)
 
 # Import squad data
 from squads_data import SQUADS, NAME_VARIATIONS, UNAVAILABLE

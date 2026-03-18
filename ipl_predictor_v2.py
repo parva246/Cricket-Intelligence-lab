@@ -169,12 +169,13 @@ def get_player_batting_stats(_deliveries, player_name):
 
     innings = player_data['match_id'].nunique()
 
+    # Count ALL dismissals including non-striker run-outs
+    # (player_dismissed can appear on deliveries where someone else is batting)
     dismissals = 0
-    if 'is_wicket' in player_data.columns:
-        if 'player_dismissed' in player_data.columns:
-            dismissals = player_data[player_data['player_dismissed'] == data_name]['is_wicket'].sum()
-        else:
-            dismissals = player_data['is_wicket'].sum()
+    if 'player_dismissed' in _deliveries.columns:
+        dismissals = int((_deliveries['player_dismissed'] == data_name).sum())
+    elif 'is_wicket' in player_data.columns:
+        dismissals = player_data['is_wicket'].sum()
 
     average = total_runs / max(dismissals, 1)
 

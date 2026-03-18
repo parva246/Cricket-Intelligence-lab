@@ -8,25 +8,8 @@ from sklearn.metrics import accuracy_score
 from xgboost import XGBClassifier
 import warnings
 import os
-import zipfile
 
 warnings.filterwarnings('ignore')
-
-# Auto-extract deliveries.csv from zip if not present
-script_dir = os.path.dirname(os.path.abspath(__file__))
-csv_path = os.path.join(script_dir, 'deliveries.csv')
-if not os.path.exists(csv_path):
-    zip_path = os.path.join(script_dir, 'deliveries.zip')
-    if not os.path.exists(zip_path):
-        zip_path = os.path.join(script_dir, 'deliveries.csv.zip')
-    if os.path.exists(zip_path):
-        with zipfile.ZipFile(zip_path, 'r') as zf:
-            csv_files = [f for f in zf.namelist() if f.endswith('.csv')]
-            if csv_files:
-                zf.extract(csv_files[0], script_dir)
-                extracted = os.path.join(script_dir, csv_files[0])
-                if extracted != csv_path:
-                    os.rename(extracted, csv_path)
 
 # Import squad data
 from squads_data import SQUADS, NAME_VARIATIONS, UNAVAILABLE
@@ -169,13 +152,12 @@ def get_player_batting_stats(_deliveries, player_name):
 
     innings = player_data['match_id'].nunique()
 
-    # Count ALL dismissals including non-striker run-outs
-    # (player_dismissed can appear on deliveries where someone else is batting)
     dismissals = 0
-    if 'player_dismissed' in _deliveries.columns:
-        dismissals = int((_deliveries['player_dismissed'] == data_name).sum())
-    elif 'is_wicket' in player_data.columns:
-        dismissals = player_data['is_wicket'].sum()
+    if 'is_wicket' in player_data.columns:
+        if 'player_dismissed' in player_data.columns:
+            dismissals = player_data[player_data['player_dismissed'] == data_name]['is_wicket'].sum()
+        else:
+            dismissals = player_data['is_wicket'].sum()
 
     average = total_runs / max(dismissals, 1)
 

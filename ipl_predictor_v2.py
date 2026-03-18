@@ -464,44 +464,33 @@ def get_chase_rate(venue, date, df):
 # ============================================================
 # MODEL TRAINING
 # ============================================================
-def get_recent_form(team, date, df, last_n=5):
-    """Win rate in last N matches — momentum/form indicator."""
-    past = df[(df['date'] < date) & ((df['team1'] == team) | (df['team2'] == team))].tail(last_n)
-    if len(past) == 0: return 0.5
-    return (past['winner'] == team).sum() / len(past)
-
 @st.cache_resource
 def train_model(_matches, _deliveries):
-    # Skip first 80 matches — they have no historical data so features are all defaults
-    train_matches = _matches.iloc[80:]
-
     features = []
-    for idx, row in train_matches.iterrows():
+    for idx, row in _matches.iterrows():
         t1_rr, t1_avg = get_team_batting_stats(row['team1'], row['date'], _matches, _deliveries)
         t2_rr, t2_avg = get_team_batting_stats(row['team2'], row['date'], _matches, _deliveries)
         t1_econ, t1_wpm = get_team_bowling_stats(row['team1'], row['date'], _matches, _deliveries)
         t2_econ, t2_wpm = get_team_bowling_stats(row['team2'], row['date'], _matches, _deliveries)
-        t1_win = get_team_win_pct(row['team1'], row['date'], _matches)
-        t2_win = get_team_win_pct(row['team2'], row['date'], _matches)
-        t1_form = get_recent_form(row['team1'], row['date'], _matches)
-        t2_form = get_recent_form(row['team2'], row['date'], _matches)
 
         features.append({
-            # Differential features — more predictive than absolute
-            'win_pct_diff': t1_win - t2_win,
-            'form_diff': t1_form - t2_form,
-            'run_rate_diff': t1_rr - t2_rr,
-            'avg_score_diff': t1_avg - t2_avg,
-            'economy_diff': t2_econ - t1_econ,  # lower economy = better, so t2-t1
-            'wickets_diff': t1_wpm - t2_wpm,
-            # Key absolute features
+            'team1_win_pct': get_team_win_pct(row['team1'], row['date'], _matches),
+            'team2_win_pct': get_team_win_pct(row['team2'], row['date'], _matches),
             'head_to_head': get_head_to_head(row['team1'], row['team2'], row['date'], _matches),
             'toss_win': 1 if row['toss_winner'] == row['team1'] else 0,
             'chose_bat': 1 if row['toss_decision'] == 'bat' else 0,
             'venue_win_rate': get_venue_win_rate(row['team1'], row['venue'], row['date'], _matches),
             'chase_rate_venue': get_chase_rate(row['venue'], row['date'], _matches),
-            'team1_form': t1_form,
-            'team2_form': t2_form,
+            'team1_run_rate': t1_rr, 'team2_run_rate': t2_rr,
+            'team1_avg_score': t1_avg, 'team2_avg_score': t2_avg,
+            'team1_bowl_economy': t1_econ, 'team2_bowl_economy': t2_econ,
+            'team1_wickets_pm': t1_wpm, 'team2_wickets_pm': t2_wpm,
+            'team1_powerplay': get_powerplay_avg(row['team1'], row['date'], _matches, _deliveries),
+            'team2_powerplay': get_powerplay_avg(row['team2'], row['date'], _matches, _deliveries),
+            'team1_death': get_death_overs_avg(row['team1'], row['date'], _matches, _deliveries),
+            'team2_death': get_death_overs_avg(row['team2'], row['date'], _matches, _deliveries),
+            'team1_middle': get_middle_overs_avg(row['team1'], row['date'], _matches, _deliveries),
+            'team2_middle': get_middle_overs_avg(row['team2'], row['date'], _matches, _deliveries),
             'target': 1 if row['winner'] == row['team1'] else 0
         })
 
@@ -510,13 +499,8 @@ def train_model(_matches, _deliveries):
     y = feature_df['target']
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
 
-    model = XGBClassifier(
-        n_estimators=150, max_depth=3, learning_rate=0.08,
-        subsample=0.7, colsample_bytree=0.7,
-        reg_alpha=1.0, reg_lambda=2.0,
-        min_child_weight=5,
-        random_state=42, eval_metric='logloss'
-    )
+    model = XGBClassifier(n_estimators=300, max_depth=4, learning_rate=0.05,
+                          subsample=0.8, colsample_bytree=0.8, random_state=42, eval_metric='logloss')
     model.fit(X_train, y_train)
     accuracy = accuracy_score(y_test, model.predict(X_test))
     feature_importance = pd.Series(model.feature_importances_, index=X.columns).sort_values(ascending=False)
@@ -532,42 +516,39 @@ def make_prediction(model, team1, team2, venue, toss_winner, toss_decision, matc
     t2_rr, t2_avg = get_team_batting_stats(team2, ref_date, matches, deliveries)
     t1_econ, t1_wpm = get_team_bowling_stats(team1, ref_date, matches, deliveries)
     t2_econ, t2_wpm = get_team_bowling_stats(team2, ref_date, matches, deliveries)
-    t1_win = get_team_win_pct(team1, ref_date, matches)
-    t2_win = get_team_win_pct(team2, ref_date, matches)
-    t1_form = get_recent_form(team1, ref_date, matches)
-    t2_form = get_recent_form(team2, ref_date, matches)
 
     input_data = {
-        'win_pct_diff': t1_win - t2_win,
-        'form_diff': t1_form - t2_form,
-        'run_rate_diff': t1_rr - t2_rr,
-        'avg_score_diff': t1_avg - t2_avg,
-        'economy_diff': t2_econ - t1_econ,
-        'wickets_diff': t1_wpm - t2_wpm,
+        'team1_win_pct': get_team_win_pct(team1, ref_date, matches),
+        'team2_win_pct': get_team_win_pct(team2, ref_date, matches),
         'head_to_head': get_head_to_head(team1, team2, ref_date, matches),
         'toss_win': 1 if toss_winner == team1 else 0,
         'chose_bat': 1 if toss_decision == 'Bat' else 0,
         'venue_win_rate': get_venue_win_rate(team1, venue, ref_date, matches),
         'chase_rate_venue': get_chase_rate(venue, ref_date, matches),
-        'team1_form': t1_form,
-        'team2_form': t2_form,
-    }
-
-    prob = model.predict_proba(pd.DataFrame([input_data]))[0]
-
-    return {
-        'team1_win_prob': prob[1], 'team2_win_prob': prob[0],
-        'team1_win_pct': t1_win, 'team2_win_pct': t2_win,
-        'head_to_head': input_data['head_to_head'],
         'team1_run_rate': t1_rr, 'team2_run_rate': t2_rr,
         'team1_avg_score': t1_avg, 'team2_avg_score': t2_avg,
         'team1_bowl_economy': t1_econ, 'team2_bowl_economy': t2_econ,
+        'team1_wickets_pm': t1_wpm, 'team2_wickets_pm': t2_wpm,
         'team1_powerplay': get_powerplay_avg(team1, ref_date, matches, deliveries),
         'team2_powerplay': get_powerplay_avg(team2, ref_date, matches, deliveries),
         'team1_death': get_death_overs_avg(team1, ref_date, matches, deliveries),
         'team2_death': get_death_overs_avg(team2, ref_date, matches, deliveries),
         'team1_middle': get_middle_overs_avg(team1, ref_date, matches, deliveries),
         'team2_middle': get_middle_overs_avg(team2, ref_date, matches, deliveries),
+    }
+
+    prob = model.predict_proba(pd.DataFrame([input_data]))[0]
+
+    return {
+        'team1_win_prob': prob[1], 'team2_win_prob': prob[0],
+        'team1_win_pct': input_data['team1_win_pct'], 'team2_win_pct': input_data['team2_win_pct'],
+        'head_to_head': input_data['head_to_head'],
+        'team1_run_rate': t1_rr, 'team2_run_rate': t2_rr,
+        'team1_avg_score': t1_avg, 'team2_avg_score': t2_avg,
+        'team1_bowl_economy': t1_econ, 'team2_bowl_economy': t2_econ,
+        'team1_powerplay': input_data['team1_powerplay'], 'team2_powerplay': input_data['team2_powerplay'],
+        'team1_death': input_data['team1_death'], 'team2_death': input_data['team2_death'],
+        'team1_middle': input_data['team1_middle'], 'team2_middle': input_data['team2_middle'],
         'venue_win_rate': input_data['venue_win_rate'],
         'chase_rate': input_data['chase_rate_venue'],
     }

@@ -8,8 +8,25 @@ from sklearn.metrics import accuracy_score
 from xgboost import XGBClassifier
 import warnings
 import os
+import zipfile
 
 warnings.filterwarnings('ignore')
+
+# Auto-extract deliveries.csv from zip if not present
+script_dir = os.path.dirname(os.path.abspath(__file__))
+csv_path = os.path.join(script_dir, 'deliveries.csv')
+if not os.path.exists(csv_path):
+    zip_path = os.path.join(script_dir, 'deliveries.zip')
+    if not os.path.exists(zip_path):
+        zip_path = os.path.join(script_dir, 'deliveries.csv.zip')
+    if os.path.exists(zip_path):
+        with zipfile.ZipFile(zip_path, 'r') as zf:
+            csv_files = [f for f in zf.namelist() if f.endswith('.csv')]
+            if csv_files:
+                zf.extract(csv_files[0], script_dir)
+                extracted = os.path.join(script_dir, csv_files[0])
+                if extracted != csv_path:
+                    os.rename(extracted, csv_path)
 
 # Import squad data
 from squads_data import SQUADS, NAME_VARIATIONS, UNAVAILABLE
@@ -45,20 +62,80 @@ TEAM_COLORS = {
 }
 
 VENUES = {
-    'Chennai': 'MA Chidambaram Stadium', 'Mumbai': 'Wankhede Stadium',
-    'Bengaluru': 'M Chinnaswamy Stadium', 'Kolkata': 'Eden Gardens',
-    'Hyderabad': 'Rajiv Gandhi International Stadium',
-    'Jaipur': 'Sawai Mansingh Stadium', 'Delhi': 'Arun Jaitley Stadium',
-    'Mohali': 'Punjab Cricket Association Stadium',
-    'Ahmedabad': 'Narendra Modi Stadium',
-    'Lucknow': 'Bharat Ratna Shri Atal Bihari Vajpayee Ekana Cricket Stadium'
+    'Chennai': 'MA Chidambaram Stadium, Chepauk',
+    'Mumbai': 'Wankhede Stadium',
+    'Bengaluru': 'M Chinnaswamy Stadium',
+    'Kolkata': 'Eden Gardens',
+    'Hyderabad': 'Rajiv Gandhi International Stadium, Uppal',
+    'Jaipur': 'Sawai Mansingh Stadium',
+    'Delhi': 'Arun Jaitley Stadium',
+    'Mohali': 'Punjab Cricket Association IS Bindra Stadium, Mohali',
+    'Ahmedabad': 'Narendra Modi Stadium, Ahmedabad',
+    'Lucknow': 'Bharat Ratna Shri Atal Bihari Vajpayee Ekana Cricket Stadium',
 }
 
 TEAM_MAPPING = {
-    'Delhi Daredevils': 'Delhi Capitals', 'Deccan Chargers': 'Sunrisers Hyderabad',
-    'Gujarat Lions': 'Gujarat Titans', 'Rising Pune Supergiant': 'Rising Pune Supergiants',
+    'Delhi Daredevils': 'Delhi Capitals',
+    'Deccan Chargers': 'Sunrisers Hyderabad',
+    'Gujarat Lions': 'Gujarat Titans',
+    'Rising Pune Supergiant': 'Rising Pune Supergiants',
     'Rising Pune Supergiants': 'Rising Pune Supergiants',
-    'Kings XI Punjab': 'Punjab Kings', 'Pune Warriors': 'Rising Pune Supergiants'
+    'Kings XI Punjab': 'Punjab Kings',
+    'Pune Warriors': 'Rising Pune Supergiants',
+    'Royal Challengers Bangalore': 'Royal Challengers Bengaluru',
+    'Kochi Tuskers Kerala': 'Kochi Tuskers Kerala',
+}
+
+# Normalize venue names — map all variants to a single canonical name
+VENUE_MAPPING = {
+    # Bengaluru
+    'M.Chinnaswamy Stadium': 'M Chinnaswamy Stadium',
+    'M Chinnaswamy Stadium, Bengaluru': 'M Chinnaswamy Stadium',
+    # Mumbai - Wankhede
+    'Wankhede Stadium, Mumbai': 'Wankhede Stadium',
+    # Chennai
+    'MA Chidambaram Stadium': 'MA Chidambaram Stadium, Chepauk',
+    'MA Chidambaram Stadium, Chepauk, Chennai': 'MA Chidambaram Stadium, Chepauk',
+    # Hyderabad
+    'Rajiv Gandhi International Stadium': 'Rajiv Gandhi International Stadium, Uppal',
+    'Rajiv Gandhi International Stadium, Uppal, Hyderabad': 'Rajiv Gandhi International Stadium, Uppal',
+    # Kolkata
+    'Eden Gardens, Kolkata': 'Eden Gardens',
+    # Delhi (renamed)
+    'Feroz Shah Kotla': 'Arun Jaitley Stadium',
+    'Arun Jaitley Stadium, Delhi': 'Arun Jaitley Stadium',
+    # Mohali / Punjab
+    'Punjab Cricket Association Stadium, Mohali': 'Punjab Cricket Association IS Bindra Stadium, Mohali',
+    'Punjab Cricket Association IS Bindra Stadium': 'Punjab Cricket Association IS Bindra Stadium, Mohali',
+    'Punjab Cricket Association IS Bindra Stadium, Mohali, Chandigarh': 'Punjab Cricket Association IS Bindra Stadium, Mohali',
+    # Mullanpur / New Chandigarh
+    'Maharaja Yadavindra Singh International Cricket Stadium, New Chandigarh': 'Maharaja Yadavindra Singh International Cricket Stadium, Mullanpur',
+    # Jaipur
+    'Sawai Mansingh Stadium, Jaipur': 'Sawai Mansingh Stadium',
+    # Ahmedabad (renamed)
+    'Sardar Patel Stadium, Motera': 'Narendra Modi Stadium, Ahmedabad',
+    'Narendra Modi Stadium': 'Narendra Modi Stadium, Ahmedabad',
+    # Pune
+    'Maharashtra Cricket Association Stadium, Pune': 'Maharashtra Cricket Association Stadium',
+    # DY Patil
+    'Dr DY Patil Sports Academy': 'Dr DY Patil Sports Academy, Mumbai',
+    # Brabourne
+    'Brabourne Stadium': 'Brabourne Stadium, Mumbai',
+    # Vizag
+    'Dr. Y.S. Rajasekhara Reddy ACA-VDCA Cricket Stadium, Visakhapatnam': 'Dr. Y.S. Rajasekhara Reddy ACA-VDCA Cricket Stadium',
+    # Dharamsala
+    'Himachal Pradesh Cricket Association Stadium, Dharamsala': 'Himachal Pradesh Cricket Association Stadium',
+    # Abu Dhabi
+    'Zayed Cricket Stadium, Abu Dhabi': 'Sheikh Zayed Stadium',
+    # Lucknow
+    'Bharat Ratna Shri Atal Bihari Vajpayee Ekana Cricket Stadium, Lucknow': 'Bharat Ratna Shri Atal Bihari Vajpayee Ekana Cricket Stadium',
+}
+
+# Normalize season format — map split-year seasons to single year
+SEASON_MAPPING = {
+    '2007/08': '2008',
+    '2009/10': '2010',
+    '2020/21': '2020',
 }
 
 # ============================================================
@@ -77,6 +154,7 @@ def load_and_clean_data():
     matches = pd.read_csv(matches_path)
     deliveries = pd.read_csv(deliveries_path)
 
+    # 1. Normalize team names (both files)
     for col in ['team1', 'team2', 'toss_winner', 'winner']:
         if col in matches.columns:
             matches[col] = matches[col].replace(TEAM_MAPPING)
@@ -84,6 +162,24 @@ def load_and_clean_data():
         if col in deliveries.columns:
             deliveries[col] = deliveries[col].replace(TEAM_MAPPING)
 
+    # 2. Normalize venue names
+    if 'venue' in matches.columns:
+        matches['venue'] = matches['venue'].replace(VENUE_MAPPING)
+
+    # 3. Normalize season format (e.g., "2007/08" -> "2008")
+    if 'season' in matches.columns:
+        matches['season'] = matches['season'].astype(str).replace(SEASON_MAPPING)
+
+    # 4. Normalize city names
+    city_mapping = {
+        'Bangalore': 'Bengaluru',
+        'Navi Mumbai': 'Mumbai',
+        'New Chandigarh': 'Mohali',
+    }
+    if 'city' in matches.columns:
+        matches['city'] = matches['city'].replace(city_mapping)
+
+    # 5. Filter and sort
     if 'result' in matches.columns:
         matches = matches[matches['result'] != 'no result']
     matches = matches.dropna(subset=['winner'])
@@ -152,12 +248,13 @@ def get_player_batting_stats(_deliveries, player_name):
 
     innings = player_data['match_id'].nunique()
 
+    # Count ALL dismissals including non-striker run-outs
+    # (player_dismissed can appear on deliveries where someone else is batting)
     dismissals = 0
-    if 'is_wicket' in player_data.columns:
-        if 'player_dismissed' in player_data.columns:
-            dismissals = player_data[player_data['player_dismissed'] == data_name]['is_wicket'].sum()
-        else:
-            dismissals = player_data['is_wicket'].sum()
+    if 'player_dismissed' in _deliveries.columns:
+        dismissals = int((_deliveries['player_dismissed'] == data_name).sum())
+    elif 'is_wicket' in player_data.columns:
+        dismissals = player_data['is_wicket'].sum()
 
     average = total_runs / max(dismissals, 1)
 
